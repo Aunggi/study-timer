@@ -38,6 +38,7 @@
     body[data-mode="long"]  { --accent: var(--long); }
 
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
 
     body {
       margin: 0;
@@ -248,6 +249,52 @@
     .bar.today { background: var(--accent); }
     .bar-col small { font-size: 11px; color: var(--muted); }
 
+    /* ---------- สถิติรายเดือน ---------- */
+    .view-toggle { display: flex; gap: 4px; background: var(--soft); padding: 4px; border-radius: 12px; margin-top: 16px; }
+    .view-toggle button {
+      flex: 1; font-family: inherit; font-size: 13px; border: none; background: transparent;
+      color: var(--muted); padding: 7px; border-radius: 9px; cursor: pointer;
+    }
+    .view-toggle button.active { background: var(--card); color: var(--accent); font-weight: 500; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+
+    .month { margin-top: 16px; }
+    .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .month-nav .icon-btn { padding: 4px 14px; font-size: 18px; }
+    .month-nav .icon-btn:disabled { opacity: 0.35; cursor: default; }
+
+    .month-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+    .month-sum div { background: var(--soft); border-radius: 12px; padding: 10px 4px; }
+    .month-sum b { display: block; font-size: 18px; color: var(--accent); }
+    .month-sum span { font-size: 11px; color: var(--muted); }
+
+    .compare { font-size: 13px; color: var(--muted); text-align: center; margin: 10px 0 12px; min-height: 18px; }
+    .compare .up { color: #10b981; font-weight: 500; }
+    .compare .down { color: #ef4444; font-weight: 500; }
+
+    .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .cal .wd { font-size: 11px; color: var(--muted); text-align: center; padding-bottom: 2px; }
+    .cal .day {
+      aspect-ratio: 1; border-radius: 6px; font-size: 11px;
+      display: grid; place-items: center; color: var(--muted);
+    }
+    .cal .day.today { outline: 2px solid var(--accent); outline-offset: -2px; color: var(--text); font-weight: 500; }
+    .l0 { background: var(--soft); }
+    .l1 { background: color-mix(in srgb, var(--accent) 25%, var(--soft)); }
+    .l2 { background: color-mix(in srgb, var(--accent) 50%, var(--soft)); }
+    .l3 { background: color-mix(in srgb, var(--accent) 75%, var(--soft)); }
+    .l4 { background: var(--accent); }
+    .cal .day.l3, .cal .day.l4 { color: white; }
+
+    .legend { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+    .legend i { width: 11px; height: 11px; border-radius: 3px; }
+    .legend span { margin: 0 4px; }
+
+    .subj-title { font-size: 13px; color: var(--muted); margin: 16px 0 8px; }
+    .subj { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; font-size: 13px; margin-bottom: 8px; }
+    .subj .track { grid-column: 1 / -1; height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden; }
+    .subj .fill { height: 100%; background: var(--accent); border-radius: 3px; }
+    .subj span:nth-child(2) { color: var(--muted); }
+
     .log { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 220px; overflow-y: auto; }
     .log li {
       display: flex; justify-content: space-between; gap: 8px;
@@ -401,7 +448,29 @@
           <div class="stat"><b id="todaySessions">0</b><span>รอบวันนี้</span></div>
           <div class="stat"><b id="streak">0</b><span>วันติดต่อกัน 🔥</span></div>
         </div>
+        <div class="view-toggle">
+          <button class="active" data-view="week">7 วันล่าสุด</button>
+          <button data-view="month">รายเดือน</button>
+        </div>
+
         <div class="week" id="week"></div>
+
+        <div class="month" id="month" hidden>
+          <div class="month-nav">
+            <button class="icon-btn" id="prevMonth" aria-label="เดือนก่อน">‹</button>
+            <b id="monthTitle"></b>
+            <button class="icon-btn" id="nextMonth" aria-label="เดือนถัดไป">›</button>
+          </div>
+          <div class="month-sum">
+            <div><b id="mMinutes">0</b><span>เวลารวม</span></div>
+            <div><b id="mSessions">0</b><span>รอบ</span></div>
+            <div><b id="mDays">0</b><span>วันที่อ่าน</span></div>
+          </div>
+          <p class="compare" id="mCompare"></p>
+          <div class="cal" id="cal"></div>
+          <div class="legend"><span>น้อย</span><i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><span>มาก</span></div>
+          <div id="mSubjects"></div>
+        </div>
       </section>
 
       <section class="card">
@@ -658,6 +727,8 @@
           <small>${d.label}</small>
         </div>`).join("");
 
+      renderMonth();
+
       const log = $("log");
       if (!t.log.length) {
         log.innerHTML = '<li class="empty" style="background:none">ยังไม่มีรอบที่อ่านจบวันนี้ เริ่มเลย!</li>';
@@ -674,6 +745,111 @@
         }
       }
     }
+
+    // ---------- สถิติรายเดือน ----------
+    const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+                    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+    let monthOffset = 0;   // 0 = เดือนนี้, -1 = เดือนที่แล้ว
+
+    function fmtDuration(min) {
+      if (min < 60) return min + " นาที";
+      const h = Math.floor(min / 60), m = min % 60;
+      return h + " ชม." + (m ? " " + m + " น." : "");
+    }
+
+    function monthTotals(year, month) {
+      const days = new Date(year, month + 1, 0).getDate();
+      const res = { minutes: 0, sessions: 0, daysStudied: 0, perDay: [], subjects: {} };
+      for (let d = 1; d <= days; d++) {
+        const day = history[dayKey(new Date(year, month, d))];
+        const min = day ? day.minutes : 0;
+        res.perDay.push(min);
+        if (!day) continue;
+        res.minutes += day.minutes;
+        res.sessions += day.sessions;
+        if (day.sessions > 0) res.daysStudied++;
+        for (const item of day.log || []) {
+          res.subjects[item.subject] = (res.subjects[item.subject] || 0) + item.minutes;
+        }
+      }
+      return res;
+    }
+
+    function renderMonth() {
+      const now = new Date();
+      const first = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+      const y = first.getFullYear(), m = first.getMonth();
+      const cur = monthTotals(y, m);
+      const before = new Date(y, m - 1, 1);
+      const prev = monthTotals(before.getFullYear(), before.getMonth());
+
+      $("monthTitle").textContent = MONTHS[m] + " " + (y + 543);
+      $("nextMonth").disabled = monthOffset >= 0;
+      $("mMinutes").textContent = fmtDuration(cur.minutes);
+      $("mSessions").textContent = cur.sessions;
+      $("mDays").textContent = cur.daysStudied;
+
+      const cmp = $("mCompare");
+      if (!prev.minutes && !cur.minutes) {
+        cmp.textContent = "ยังไม่มีข้อมูลเดือนนี้";
+      } else if (!prev.minutes) {
+        cmp.textContent = "เดือนแรกที่เริ่มบันทึก สู้ๆ! 💪";
+      } else {
+        const diff = Math.round(((cur.minutes - prev.minutes) / prev.minutes) * 100);
+        cmp.innerHTML = diff >= 0
+          ? `อ่านมากกว่าเดือนก่อน <span class="up">▲ ${diff}%</span>`
+          : `อ่านน้อยกว่าเดือนก่อน <span class="down">▼ ${Math.abs(diff)}%</span>`;
+      }
+
+      // ปฏิทิน: ความเข้มของสีตามจำนวนนาทีที่อ่าน
+      const goalMin = settings.dailyGoal * settings.focus;
+      const level = (min) => !min ? 0 : min >= goalMin ? 4 : min >= goalMin * 0.6 ? 3 : min >= goalMin * 0.3 ? 2 : 1;
+      const isThisMonth = monthOffset === 0;
+      let html = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"].map(d => `<div class="wd">${d}</div>`).join("");
+      for (let i = 0; i < first.getDay(); i++) html += "<div></div>";
+      cur.perDay.forEach((min, i) => {
+        const today = isThisMonth && i + 1 === now.getDate();
+        html += `<div class="day l${level(min)}${today ? " today" : ""}" title="${i + 1} ${MONTHS[m]}: ${min} นาที">${i + 1}</div>`;
+      });
+      $("cal").innerHTML = html;
+
+      // วิชาที่อ่านมากที่สุดในเดือน
+      const subjects = Object.entries(cur.subjects).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const box = $("mSubjects");
+      box.innerHTML = "";
+      if (subjects.length) {
+        const title = document.createElement("div");
+        title.className = "subj-title";
+        title.textContent = "วิชาที่อ่านมากที่สุด";
+        box.appendChild(title);
+        const top = subjects[0][1];
+        for (const [name, min] of subjects) {
+          const row = document.createElement("div");
+          row.className = "subj";
+          const a = document.createElement("span");
+          const b = document.createElement("span");
+          a.textContent = name;
+          b.textContent = fmtDuration(min);
+          const track = document.createElement("div");
+          track.className = "track";
+          track.innerHTML = `<div class="fill" style="width:${(min / top) * 100}%"></div>`;
+          row.append(a, b, track);
+          box.appendChild(row);
+        }
+      }
+    }
+
+    document.querySelectorAll(".view-toggle button").forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll(".view-toggle button").forEach(b => b.classList.toggle("active", b === btn));
+        const month = btn.dataset.view === "month";
+        $("week").hidden = month;
+        $("month").hidden = !month;
+        save("st-view", btn.dataset.view);
+      };
+    });
+    $("prevMonth").onclick = () => { monthOffset--; renderMonth(); };
+    $("nextMonth").onclick = () => { if (monthOffset < 0) { monthOffset++; renderMonth(); } };
 
     // ---------- เสียง ----------
     let audioCtx = null;
@@ -914,6 +1090,9 @@
     document.querySelectorAll("#soundRow .chip").forEach(c => c.classList.toggle("active", c.dataset.sound === currentSound));
 
     $("quote").textContent = QUOTES[new Date().getDate() % QUOTES.length];
+
+    // จำว่าดูสถิติแบบไหนไว้ล่าสุด
+    if (load("st-view", "week") === "month") document.querySelector('.view-toggle [data-view="month"]').click();
 
     total = minutesFor(mode);
     remaining = total;
