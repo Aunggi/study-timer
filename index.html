@@ -322,6 +322,12 @@
     .btn-ghost { background: var(--soft); color: var(--text); }
     .btn-solid { background: var(--accent); color: white; }
 
+    .backup { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .backup h3 { margin: 0 0 4px; font-size: 15px; font-weight: 500; }
+    .backup p { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+    .backup-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .backup-row .btn { padding: 10px 8px; border-radius: 12px; font-size: 13px; }
+
     .danger { margin-top: 16px; font-size: 13px; color: var(--muted); background: none; border: none; cursor: pointer; font-family: inherit; text-decoration: underline; }
 
     /* ---------- แจ้งเตือนมุมจอ ---------- */
@@ -443,6 +449,16 @@
         <button type="button" class="btn btn-ghost" id="cancelSettings">ยกเลิก</button>
         <button type="submit" class="btn btn-solid">บันทึก</button>
       </div>
+      <div class="backup">
+        <h3>💾 สำรองข้อมูล</h3>
+        <p>บันทึกสถิติเป็นไฟล์ เก็บไว้หรือย้ายไปเครื่องอื่นได้</p>
+        <div class="backup-row">
+          <button type="button" class="btn btn-ghost" id="exportData">⬇️ ดาวน์โหลดไฟล์สำรอง</button>
+          <button type="button" class="btn btn-ghost" id="importBtn">⬆️ นำข้อมูลกลับมา</button>
+          <input type="file" id="importFile" accept=".json,application/json" hidden>
+        </div>
+      </div>
+
       <button type="button" class="danger" id="clearData">ล้างสถิติทั้งหมด</button>
     </form>
   </dialog>
@@ -810,6 +826,52 @@
         renderStats();
         dlg.close();
         toast("ล้างสถิติแล้ว");
+      }
+    };
+
+    // ---------- สำรองข้อมูล ----------
+    $("exportData").onclick = () => {
+      const data = { app: "study-timer", version: 1, exportedAt: new Date().toISOString(), settings, history };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "study-timer-backup-" + dayKey() + ".json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      toast("ดาวน์โหลดไฟล์สำรองแล้ว 💾");
+    };
+
+    $("importBtn").onclick = () => $("importFile").click();
+
+    $("importFile").onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      try {
+        const data = JSON.parse(await file.text());
+        if (data.app !== "study-timer" || typeof data.history !== "object" || !data.history) throw new Error("bad file");
+        const days = Object.keys(data.history).length;
+        if (!confirm(`พบข้อมูล ${days} วัน จะนำมารวมกับข้อมูลปัจจุบันไหม?\n(วันที่ซ้ำกันจะใช้ข้อมูลที่มีรอบมากกว่า)`)) return;
+
+        for (const [key, day] of Object.entries(data.history)) {
+          if (!day || typeof day.sessions !== "number") continue;
+          const mine = history[key];
+          if (!mine || day.sessions > mine.sessions) {
+            history[key] = { minutes: Number(day.minutes) || 0, sessions: day.sessions, log: Array.isArray(day.log) ? day.log : [] };
+          }
+        }
+        if (data.settings) settings = { ...DEFAULTS, ...data.settings };
+        save("st-history", history);
+        save("st-settings", settings);
+        if (!isRunning()) { total = minutesFor(mode); remaining = total; }
+        render();
+        renderStats();
+        dlg.close();
+        toast("นำข้อมูลกลับมาเรียบร้อย ✅");
+      } catch {
+        toast("ไฟล์นี้ไม่ใช่ไฟล์สำรองของแอปนี้ ❌");
       }
     };
 
