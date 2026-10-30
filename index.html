@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>จับเวลาอ่านหนังสือ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --soft: #f1f5f9;
+      --focus: #ef4444;
+      --short: #10b981;
+      --long: #3b82f6;
+      --accent: var(--focus);
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1120;
+        --card: #111827;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --line: #1f2937;
+        --soft: #1e293b;
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      }
+    }
+
+    body[data-mode="short"] { --accent: var(--short); }
+    body[data-mode="long"]  { --accent: var(--long); }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Prompt", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 50%),
+        var(--bg);
+      transition: background 0.6s ease;
+    }
+
+    .wrap {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 1fr;
+    }
+
+    @media (min-width: 820px) {
+      .wrap { grid-template-columns: 1.3fr 1fr; align-items: start; }
+      header { grid-column: 1 / -1; }
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      font-family: inherit;
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 8px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .icon-btn:hover { border-color: var(--accent); }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    /* ---------- แท็บเลือกโหมด ---------- */
+    .tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--soft);
+      padding: 6px;
+      border-radius: 999px;
+      margin-bottom: 24px;
+    }
+    .tab {
+      flex: 1;
+      font-family: inherit;
+      font-size: 14px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      padding: 10px 8px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .tab.active {
+      background: var(--card);
+      color: var(--accent);
+      font-weight: 500;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    /* ---------- วงแหวนเวลา ---------- */
+    .ring-box {
+      position: relative;
+      width: min(300px, 78vw);
+      aspect-ratio: 1;
+      margin: 0 auto;
+    }
+    .ring-box svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-bg { stroke: var(--soft); }
+    .ring-fg {
+      stroke: var(--accent);
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.4s linear, stroke 0.6s ease;
+    }
+    .ring-text {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      text-align: center;
+    }
+    .time {
+      font-size: clamp(48px, 15vw, 68px);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 1px;
+      line-height: 1;
+    }
+    .mode-label { color: var(--muted); margin-top: 8px; }
+
+    .dots {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin: 20px 0 8px;
+    }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--soft);
+      border: 1px solid var(--line);
+    }
+    .dot.done { background: var(--accent); border-color: var(--accent); }
+    .round-text { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+    .subject {
+      width: 100%;
+      font-family: inherit;
+      font-size: 16px;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      color: var(--text);
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .subject:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    .controls { display: flex; justify-content: center; align-items: center; gap: 14px; }
+
+    .btn {
+      font-family: inherit;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.12s ease, filter 0.2s ease;
+    }
+    .btn:active { transform: scale(0.95); }
+
+    .btn-main {
+      font-size: 20px;
+      font-weight: 500;
+      min-width: 160px;
+      padding: 16px 32px;
+      border-radius: 999px;
+      color: white;
+      background: var(--accent);
+      box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 40%, transparent);
+    }
+    .btn-main:hover { filter: brightness(1.08); }
+
+    .btn-round {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      font-size: 20px;
+      background: var(--soft);
+      color: var(--text);
+    }
+    .btn-round:hover { filter: brightness(0.95); }
+
+    .hint { text-align: center; color: var(--muted); font-size: 12px; margin-top: 16px; }
+
+    /* ---------- คอลัมน์ขวา ---------- */
+    .side { display: grid; gap: 20px; }
+
+    h2 { margin: 0 0 16px; font-size: 17px; font-weight: 500; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .stat {
+      background: var(--soft);
+      border-radius: 16px;
+      padding: 14px 8px;
+      text-align: center;
+    }
+    .stat b { display: block; font-size: 24px; font-weight: 700; color: var(--accent); }
+    .stat span { font-size: 12px; color: var(--muted); }
+
+    .week { display: flex; align-items: flex-end; gap: 8px; height: 110px; margin-top: 20px; }
+    .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; }
+    .bar-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+    .bar {
+      width: 100%;
+      min-height: 3px;
+      border-radius: 6px 6px 3px 3px;
+      background: color-mix(in srgb, var(--accent) 45%, transparent);
+      transition: height 0.4s ease;
+    }
+    .bar.today { background: var(--accent); }
+    .bar-col small { font-size: 11px; color: var(--muted); }
+
+    .log { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 220px; overflow-y: auto; }
+    .log li {
+      display: flex; justify-content: space-between; gap: 8px;
+      padding: 10px 12px;
+      background: var(--soft);
+      border-radius: 12px;
+      font-size: 14px;
+    }
+    .log li span:last-child { color: var(--muted); white-space: nowrap; }
+    .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 12px; }
+
+    .sound-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip {
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .chip.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+    .quote { font-size: 14px; color: var(--muted); font-style: italic; margin: 0; line-height: 1.6; }
+
+    /* ---------- หน้าต่างตั้งค่า ---------- */
+    dialog {
+      border: none;
+      border-radius: 24px;
+      padding: 0;
+      width: min(440px, calc(100vw - 32px));
+      background: var(--card);
+      color: var(--text);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
+    }
+    dialog::backdrop { background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); }
+    .dlg { padding: 24px; }
+    .dlg h2 { font-size: 20px; }
+
+    .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+    .preset {
+      font-family: inherit;
+      padding: 10px 4px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .preset b { display: block; font-size: 16px; }
+    .preset:hover { border-color: var(--accent); }
+
+    .field { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .field label { font-size: 15px; }
+    .field input[type="number"] {
+      width: 80px;
+      font-family: inherit;
+      font-size: 16px;
+      padding: 8px;
+      text-align: center;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      color: var(--text);
+    }
+    .field input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); }
+
+    .dlg-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .dlg-actions .btn { padding: 12px 22px; border-radius: 12px; font-size: 15px; }
+    .btn-ghost { background: var(--soft); color: var(--text); }
+    .btn-solid { background: var(--accent); color: white; }
+
+    .danger { margin-top: 16px; font-size: 13px; color: var(--muted); background: none; border: none; cursor: pointer; font-family: inherit; text-decoration: underline; }
+
+    /* ---------- แจ้งเตือนมุมจอ ---------- */
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translate(-50%, 120px);
+      background: var(--text);
+      color: var(--bg);
+      padding: 12px 22px;
+      border-radius: 999px;
+      font-size: 15px;
+      transition: transform 0.35s ease;
+      z-index: 10;
+      max-width: calc(100vw - 32px);
+      text-align: center;
+    }
+    .toast.show { transform: translate(-50%, 0); }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body data-mode="focus">
+  <div class="wrap">
+    <header>
+      <h1>📚 จับเวลาอ่านหนังสือ</h1>
+      <button class="icon-btn" id="openSettings">⚙️ ตั้งค่า</button>
+    </header>
+
+    <!-- ตัวจับเวลาหลัก -->
+    <main class="card">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-mode="focus">อ่านหนังสือ</button>
+        <button class="tab" data-mode="short">พักสั้น</button>
+        <button class="tab" data-mode="long">พักยาว</button>
+      </div>
+
+      <div class="ring-box">
+        <svg viewBox="0 0 120 120">
+          <circle class="ring-bg" cx="60" cy="60" r="54" fill="none" stroke-width="7"/>
+          <circle class="ring-fg" id="ring" cx="60" cy="60" r="54" fill="none" stroke-width="7"/>
+        </svg>
+        <div class="ring-text">
+          <div class="time" id="time">25:00</div>
+          <div class="mode-label" id="modeLabel">ตั้งใจอ่าน 💪</div>
+        </div>
+      </div>
+
+      <div class="dots" id="dots"></div>
+      <div class="round-text" id="roundText">รอบที่ 1</div>
+
+      <input class="subject" id="subject" maxlength="40" placeholder="กำลังอ่านวิชาอะไรอยู่? เช่น คณิต, อังกฤษ">
+
+      <div class="controls">
+        <button class="btn btn-round" id="resetBtn" title="เริ่มรอบนี้ใหม่">↺</button>
+        <button class="btn btn-main" id="startBtn">เริ่ม</button>
+        <button class="btn btn-round" id="skipBtn" title="ข้ามไปช่วงถัดไป">⏭</button>
+      </div>
+      <p class="hint">คีย์ลัด: Space = เริ่ม/หยุด · R = เริ่มใหม่ · S = ข้าม</p>
+    </main>
+
+    <!-- คอลัมน์ขวา -->
+    <div class="side">
+      <section class="card">
+        <h2>📊 สถิติ</h2>
+        <div class="stats">
+          <div class="stat"><b id="todayMin">0</b><span>นาทีวันนี้</span></div>
+          <div class="stat"><b id="todaySessions">0</b><span>รอบวันนี้</span></div>
+          <div class="stat"><b id="streak">0</b><span>วันติดต่อกัน 🔥</span></div>
+        </div>
+        <div class="week" id="week"></div>
+      </section>
+
+      <section class="card">
+        <h2>🎧 เสียงพื้นหลัง</h2>
+        <div class="sound-row" id="soundRow">
+          <button class="chip active" data-sound="off">ปิด</button>
+          <button class="chip" data-sound="rain">🌧️ ฝนตก</button>
+          <button class="chip" data-sound="brown">🌊 คลื่นเบาๆ</button>
+          <button class="chip" data-sound="white">📻 ไวท์นอยส์</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>📝 อ่านอะไรไปบ้างวันนี้</h2>
+        <ul class="log" id="log"></ul>
+      </section>
+
+      <section class="card">
+        <p class="quote" id="quote"></p>
+      </section>
+    </div>
+  </div>
+
+  <!-- หน้าต่างตั้งค่า -->
+  <dialog id="settings">
+    <form class="dlg" method="dialog" id="settingsForm">
+      <h2>⚙️ ตั้งค่า</h2>
+
+      <div class="presets">
+        <button type="button" class="preset" data-preset="25,5,15"><b>25 / 5</b>คลาสสิก</button>
+        <button type="button" class="preset" data-preset="50,10,20"><b>50 / 10</b>อ่านยาว</button>
+        <button type="button" class="preset" data-preset="15,3,10"><b>15 / 3</b>เริ่มต้นง่ายๆ</button>
+      </div>
+
+      <div class="field"><label for="focusMin">เวลาอ่าน (นาที)</label><input type="number" id="focusMin" min="1" max="180"></div>
+      <div class="field"><label for="shortMin">พักสั้น (นาที)</label><input type="number" id="shortMin" min="1" max="60"></div>
+      <div class="field"><label for="longMin">พักยาว (นาที)</label><input type="number" id="longMin" min="1" max="90"></div>
+      <div class="field"><label for="rounds">พักยาวทุกๆ กี่รอบ</label><input type="number" id="rounds" min="2" max="10"></div>
+      <div class="field"><label for="dailyGoal">เป้าหมายต่อวัน (รอบ)</label><input type="number" id="dailyGoal" min="1" max="30"></div>
+      <div class="field"><label for="autoStart">เริ่มช่วงถัดไปอัตโนมัติ</label><input type="checkbox" id="autoStart"></div>
+      <div class="field"><label for="chime">เสียงเตือนเมื่อหมดเวลา</label><input type="checkbox" id="chime"></div>
+      <div class="field"><label for="notify">แจ้งเตือนบนหน้าจอ</label><input type="checkbox" id="notify"></div>
+
+      <div class="dlg-actions">
+        <button type="button" class="btn btn-ghost" id="cancelSettings">ยกเลิก</button>
+        <button type="submit" class="btn btn-solid">บันทึก</button>
+      </div>
+      <button type="button" class="danger" id="clearData">ล้างสถิติทั้งหมด</button>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ---------- ค่าเริ่มต้นและการบันทึก ----------
+    const DEFAULTS = { focus: 25, short: 5, long: 15, rounds: 4, dailyGoal: 8, autoStart: false, chime: true, notify: false };
+    const MODES = {
+      focus: { label: "ตั้งใจอ่าน 💪", title: "อ่านหนังสือ" },
+      short: { label: "พักสายตาหน่อย ☕", title: "พักสั้น" },
+      long:  { label: "พักยาว ยืดเส้นยืดสาย 🧘", title: "พักยาว" }
+    };
+    const QUOTES = [
+      "“ความสำเร็จคือผลรวมของความพยายามเล็กๆ ที่ทำซ้ำทุกวัน”",
+      "“ไม่ต้องเก่งตั้งแต่เริ่ม แต่ต้องเริ่มถึงจะเก่ง”",
+      "“อ่านวันละนิด ดีกว่าอ่านทีเดียวตอนใกล้สอบ”",
+      "“พักเป็น ก็คือส่วนหนึ่งของการเรียนเก่ง”",
+      "“ทุกนาทีที่ตั้งใจ คือการลงทุนให้ตัวเองในอนาคต”",
+      "“ช้าๆ ไม่เป็นไร ขอแค่ไม่หยุด”"
+    ];
+
+    function load(key, fallback) {
+      try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+      catch { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+    }
+
+    let settings = { ...DEFAULTS, ...load("st-settings", {}) };
+    // history: { "2026-10-31": { minutes: 50, sessions: 2, log: [{subject, minutes, time}] } }
+    let history = load("st-history", {});
+
+    // ---------- สถานะตัวจับเวลา ----------
+    let mode = "focus";
+    let round = 1;            // รอบอ่านที่กำลังทำ (1..settings.rounds)
+    let total = settings.focus * 60;
+    let remaining = total;
+    let endAt = null;         // เวลาที่จะหมด (ms) ใช้ตอนกำลังเดิน
+    let ticker = null;
+
+    const $ = (id) => document.getElementById(id);
+    const ring = $("ring");
+    const CIRC = 2 * Math.PI * 54;
+    ring.style.strokeDasharray = CIRC;
+
+    function minutesFor(m) { return settings[m] * 60; }
+    function isRunning() { return endAt !== null; }
+
+    function fmt(sec) {
+      const m = Math.floor(sec / 60), s = sec % 60;
+      return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }
+
+    function render() {
+      $("time").textContent = fmt(remaining);
+      $("modeLabel").textContent = MODES[mode].label;
+      ring.style.strokeDashoffset = CIRC * (1 - remaining / total);
+      $("startBtn").textContent = isRunning() ? "หยุดชั่วคราว" : (remaining < total ? "ทำต่อ" : "เริ่ม");
+      document.body.dataset.mode = mode;
+      document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.mode === mode));
+      document.title = (isRunning() ? fmt(remaining) + " · " : "") + MODES[mode].title + " | จับเวลาอ่านหนังสือ";
+
+      const dots = $("dots");
+      dots.innerHTML = "";
+      for (let i = 1; i <= settings.rounds; i++) {
+        const d = document.createElement("div");
+        d.className = "dot" + (i < round || (i === round && mode !== "focus") ? " done" : "");
+        dots.appendChild(d);
+      }
+      $("roundText").textContent = mode === "focus"
+        ? `รอบที่ ${round} จาก ${settings.rounds}`
+        : `อ่านครบ ${mode === "long" ? settings.rounds : round} รอบแล้ว`;
+    }
+
+    // ---------- ควบคุม ----------
+    function start() {
+      unlockAudio();
+      endAt = Date.now() + remaining * 1000;
+      ticker = setInterval(tick, 250);
+      if (currentSound !== "off") playNoise(currentSound);
+      render();
+    }
+
+    function pause() {
+      clearInterval(ticker);
+      ticker = null;
+      endAt = null;
+      stopNoise();
+      render();
+    }
+
+    function tick() {
+      // คำนวณจากเวลาจริง จึงแม่นยำแม้สลับแท็บไปทำอย่างอื่น
+      remaining = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+      if (remaining <= 0) finish(); else render();
+    }
+
+    function setMode(m, keepRunning = false) {
+      const wasRunning = isRunning();
+      pause();
+      mode = m;
+      total = minutesFor(m);
+      remaining = total;
+      render();
+      if (keepRunning && wasRunning) start();
+    }
+
+    function finish() {
+      pause();
+      if (mode === "focus") {
+        recordSession(settings.focus);
+        const goalHit = todayStats().sessions === settings.dailyGoal;
+        if (round >= settings.rounds) {
+          alertDone("อ่านครบ " + settings.rounds + " รอบแล้ว! พักยาวได้เลย 🎉");
+          setMode("long");
+        } else {
+          alertDone(goalHit ? "ถึงเป้าหมายวันนี้แล้ว! เก่งมาก 🏆" : "หมดเวลาอ่านแล้ว พักสักหน่อยนะ ☕");
+          setMode("short");
+        }
+      } else {
+        round = mode === "long" ? 1 : round + 1;
+        alertDone("หมดเวลาพักแล้ว กลับมาอ่านกันต่อ 📖");
+        setMode("focus");
+      }
+      if (settings.autoStart) start();
+    }
+
+    function skip() {
+      if (mode === "focus") {
+        if (round >= settings.rounds) setMode("long"); else setMode("short");
+      } else {
+        round = mode === "long" ? 1 : round + 1;
+        setMode("focus");
+      }
+    }
+
+    function resetCurrent() {
+      pause();
+      remaining = total;
+      render();
+    }
+
+    // ---------- สถิติ ----------
+    function dayKey(d = new Date()) {
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+    function todayStats() { return history[dayKey()] || { minutes: 0, sessions: 0, log: [] }; }
+
+    function recordSession(minutes) {
+      const key = dayKey();
+      const day = history[key] || { minutes: 0, sessions: 0, log: [] };
+      day.minutes += minutes;
+      day.sessions += 1;
+      const now = new Date();
+      day.log.unshift({
+        subject: $("subject").value.trim() || "ไม่ระบุวิชา",
+        minutes,
+        time: String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0")
+      });
+      history[key] = day;
+      save("st-history", history);
+      renderStats();
+    }
+
+    function streak() {
+      let n = 0;
+      const d = new Date();
+      // ถ้าวันนี้ยังไม่ได้อ่าน ให้เริ่มนับจากเมื่อวาน (ไฟยังไม่ดับ)
+      if (!history[dayKey(d)]) d.setDate(d.getDate() - 1);
+      while (history[dayKey(d)] && history[dayKey(d)].sessions > 0) {
+        n++;
+        d.setDate(d.getDate() - 1);
+      }
+      return n;
+    }
+
+    function renderStats() {
+      const t = todayStats();
+      $("todayMin").textContent = t.minutes;
+      $("todaySessions").textContent = t.sessions + "/" + settings.dailyGoal;
+      $("streak").textContent = streak();
+
+      const names = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+      const days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push({ label: i === 0 ? "วันนี้" : names[d.getDay()], min: (history[dayKey(d)] || {}).minutes || 0, today: i === 0 });
+      }
+      const max = Math.max(60, ...days.map(d => d.min));
+      $("week").innerHTML = days.map(d => `
+        <div class="bar-col" title="${d.min} นาที">
+          <div class="bar-track"><div class="bar${d.today ? " today" : ""}" style="height:${(d.min / max) * 100}%"></div></div>
+          <small>${d.label}</small>
+        </div>`).join("");
+
+      const log = $("log");
+      if (!t.log.length) {
+        log.innerHTML = '<li class="empty" style="background:none">ยังไม่มีรอบที่อ่านจบวันนี้ เริ่มเลย!</li>';
+      } else {
+        log.innerHTML = "";
+        for (const item of t.log) {
+          const li = document.createElement("li");
+          const a = document.createElement("span");
+          const b = document.createElement("span");
+          a.textContent = "📖 " + item.subject;
+          b.textContent = item.minutes + " นาที · " + item.time;
+          li.append(a, b);
+          log.appendChild(li);
+        }
+      }
+    }
+
+    // ---------- เสียง ----------
+    let audioCtx = null;
+    let noiseNode = null;
+    let currentSound = "off";
+
+    function unlockAudio() {
+      if (!audioCtx) {
+        try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    }
+
+    function chime() {
+      if (!settings.chime || !audioCtx) return;
+      const notes = [660, 880, 990];
+      notes.forEach((f, i) => {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        const t = audioCtx.currentTime + i * 0.22;
+        o.type = "sine";
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.25, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        o.connect(g).connect(audioCtx.destination);
+        o.start(t);
+        o.stop(t + 0.65);
+      });
+    }
+
+    // สร้างเสียงพื้นหลังด้วยโค้ด ไม่ต้องโหลดไฟล์เสียง
+    function makeNoiseBuffer(type) {
+      const len = audioCtx.sampleRate * 4;
+      const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+      const data = buf.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < len; i++) {
+        const white = Math.random() * 2 - 1;
+        if (type === "white") {
+          data[i] = white * 0.3;
+        } else {
+          last = (last + 0.02 * white) / 1.02;
+          data[i] = last * 3.5;
+        }
+      }
+      return buf;
+    }
+
+    function playNoise(type) {
+      stopNoise();
+      if (!audioCtx) return;
+      const src = audioCtx.createBufferSource();
+      src.buffer = makeNoiseBuffer(type);
+      src.loop = true;
+      const gain = audioCtx.createGain();
+      gain.gain.value = type === "white" ? 0.15 : 0.5;
+      let out = src;
+      if (type === "rain") {
+        // ฝน = เสียงสีขาวกรองความถี่สูงออก + ซ่าเบาๆ
+        const white = audioCtx.createBufferSource();
+        white.buffer = makeNoiseBuffer("white");
+        white.loop = true;
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = "bandpass";
+        hp.frequency.value = 1800;
+        hp.Q.value = 0.6;
+        const wg = audioCtx.createGain();
+        wg.gain.value = 0.35;
+        white.connect(hp).connect(wg).connect(audioCtx.destination);
+        white.start();
+        src._extra = white;
+      }
+      out.connect(gain).connect(audioCtx.destination);
+      src.start();
+      noiseNode = src;
+    }
+
+    function stopNoise() {
+      if (noiseNode) {
+        try { noiseNode.stop(); if (noiseNode._extra) noiseNode._extra.stop(); } catch {}
+        noiseNode = null;
+      }
+    }
+
+    // ---------- แจ้งเตือน ----------
+    function alertDone(text) {
+      chime();
+      toast(text);
+      if (settings.notify && "Notification" in window && Notification.permission === "granted") {
+        try { new Notification("จับเวลาอ่านหนังสือ", { body: text }); } catch {}
+      }
+    }
+
+    let toastTimer = null;
+    function toast(text) {
+      const el = $("toast");
+      el.textContent = text;
+      el.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove("show"), 3500);
+    }
+
+    // ---------- ตั้งค่า ----------
+    const dlg = $("settings");
+    const numFields = { focusMin: "focus", shortMin: "short", longMin: "long", rounds: "rounds", dailyGoal: "dailyGoal" };
+    const boolFields = ["autoStart", "chime", "notify"];
+
+    function fillSettings(s) {
+      for (const [id, key] of Object.entries(numFields)) $(id).value = s[key];
+      for (const id of boolFields) $(id).checked = s[id];
+    }
+
+    $("openSettings").onclick = () => { fillSettings(settings); dlg.showModal(); };
+    $("cancelSettings").onclick = () => dlg.close();
+
+    document.querySelectorAll(".preset").forEach(btn => {
+      btn.onclick = () => {
+        const [f, s, l] = btn.dataset.preset.split(",").map(Number);
+        $("focusMin").value = f; $("shortMin").value = s; $("longMin").value = l;
+      };
+    });
+
+    $("settingsForm").onsubmit = async () => {
+      const next = { ...settings };
+      for (const [id, key] of Object.entries(numFields)) {
+        const el = $(id);
+        const v = Math.round(Number(el.value));
+        next[key] = Math.min(Number(el.max), Math.max(Number(el.min), v || DEFAULTS[key]));
+      }
+      for (const id of boolFields) next[id] = $(id).checked;
+
+      if (next.notify && "Notification" in window && Notification.permission === "default") {
+        try { await Notification.requestPermission(); } catch {}
+      }
+
+      settings = next;
+      save("st-settings", settings);
+      if (round > settings.rounds) round = 1;
+      if (!isRunning()) { total = minutesFor(mode); remaining = total; }
+      render();
+      renderStats();
+      toast("บันทึกการตั้งค่าแล้ว ✅");
+    };
+
+    $("clearData").onclick = () => {
+      if (confirm("ล้างสถิติการอ่านทั้งหมดใช่ไหม? ย้อนกลับไม่ได้นะ")) {
+        history = {};
+        save("st-history", history);
+        renderStats();
+        dlg.close();
+        toast("ล้างสถิติแล้ว");
+      }
+    };
+
+    // ---------- ปุ่มและคีย์ลัด ----------
+    $("startBtn").onclick = () => (isRunning() ? pause() : start());
+    $("resetBtn").onclick = resetCurrent;
+    $("skipBtn").onclick = skip;
+
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.onclick = () => {
+        if (tab.dataset.mode === mode) return;
+        if (isRunning() && !confirm("ตัวจับเวลากำลังเดินอยู่ จะเปลี่ยนโหมดเลยไหม?")) return;
+        setMode(tab.dataset.mode);
+      };
+    });
+
+    document.querySelectorAll("#soundRow .chip").forEach(chip => {
+      chip.onclick = () => {
+        currentSound = chip.dataset.sound;
+        document.querySelectorAll("#soundRow .chip").forEach(c => c.classList.toggle("active", c === chip));
+        unlockAudio();
+        if (currentSound === "off") stopNoise();
+        else playNoise(currentSound);
+        save("st-sound", currentSound);
+      };
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" || dlg.open) return;
+      if (e.code === "Space") { e.preventDefault(); isRunning() ? pause() : start(); }
+      else if (e.key === "r" || e.key === "R") resetCurrent();
+      else if (e.key === "s" || e.key === "S") skip();
+    });
+
+    $("subject").value = load("st-subject", "");
+    $("subject").addEventListener("input", () => save("st-subject", $("subject").value));
+
+    // จำเสียงที่เลือกไว้ (จะเริ่มเล่นเมื่อกดเริ่ม เพราะเบราว์เซอร์ไม่ให้เล่นเสียงเอง)
+    currentSound = load("st-sound", "off");
+    document.querySelectorAll("#soundRow .chip").forEach(c => c.classList.toggle("active", c.dataset.sound === currentSound));
+
+    $("quote").textContent = QUOTES[new Date().getDate() % QUOTES.length];
+
+    total = minutesFor(mode);
+    remaining = total;
+    render();
+    renderStats();
+  </script>
+</body>
+</html>
