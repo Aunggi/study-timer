@@ -559,7 +559,22 @@
       try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
     }
 
-    let settings = { ...DEFAULTS, ...load("st-settings", {}) };
+    // ตรวจค่าที่โหลดมา (จากเครื่องหรือไฟล์สำรอง) ให้อยู่ในช่วงที่ใช้ได้เสมอ
+    const LIMITS = { focus: [1, 180], short: [1, 60], long: [1, 90], rounds: [2, 10], dailyGoal: [1, 30] };
+    function cleanSettings(raw) {
+      const s = { ...DEFAULTS };
+      if (!raw || typeof raw !== "object") return s;
+      for (const [key, [min, max]] of Object.entries(LIMITS)) {
+        const v = Math.round(Number(raw[key]));
+        s[key] = Number.isFinite(v) && v > 0 ? Math.min(max, Math.max(min, v)) : DEFAULTS[key];
+      }
+      for (const key of ["autoStart", "chime", "notify"]) {
+        if (typeof raw[key] === "boolean") s[key] = raw[key];
+      }
+      return s;
+    }
+
+    let settings = cleanSettings(load("st-settings", {}));
     // history: { "2026-10-31": { minutes: 50, sessions: 2, log: [{subject, minutes, time}] } }
     let history = load("st-history", {});
 
@@ -769,7 +784,8 @@
         res.sessions += day.sessions;
         if (day.sessions > 0) res.daysStudied++;
         for (const item of day.log || []) {
-          res.subjects[item.subject] = (res.subjects[item.subject] || 0) + item.minutes;
+          const name = String(item.subject || "ไม่ระบุวิชา");
+          res.subjects[name] = (res.subjects[name] || 0) + (Number(item.minutes) || 0);
         }
       }
       return res;
@@ -1038,7 +1054,8 @@
             history[key] = { minutes: Number(day.minutes) || 0, sessions: day.sessions, log: Array.isArray(day.log) ? day.log : [] };
           }
         }
-        if (data.settings) settings = { ...DEFAULTS, ...data.settings };
+        if (data.settings) settings = cleanSettings(data.settings);
+        if (round > settings.rounds) round = 1;
         save("st-history", history);
         save("st-settings", settings);
         if (!isRunning()) { total = minutesFor(mode); remaining = total; }
@@ -1070,16 +1087,25 @@
         document.querySelectorAll("#soundRow .chip").forEach(c => c.classList.toggle("active", c === chip));
         unlockAudio();
         if (currentSound === "off") stopNoise();
-        else playNoise(currentSound);
+        else if (isRunning()) playNoise(currentSound);
+        else toast("เสียงจะเล่นตอนกดเริ่มจับเวลา 🎧");
         save("st-sound", currentSound);
       };
     });
 
     document.addEventListener("keydown", (e) => {
-      if (e.target.tagName === "INPUT" || dlg.open) return;
+      // ไม่รับคีย์ลัดตอนพิมพ์, ตอนเปิดหน้าตั้งค่า, ตอนกด Ctrl/Cmd (เช่น Ctrl+R รีเฟรช)
+      // และตอนโฟกัสอยู่ที่ปุ่ม เพราะ Space จะกดปุ่มนั้นให้อยู่แล้ว ไม่งั้นจะทำงานซ้ำสองครั้ง
+      if (["INPUT", "TEXTAREA", "BUTTON"].includes(e.target.tagName) || dlg.open) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.code === "Space") { e.preventDefault(); isRunning() ? pause() : start(); }
       else if (e.key === "r" || e.key === "R") resetCurrent();
       else if (e.key === "s" || e.key === "S") skip();
+    });
+
+    // เบราว์เซอร์จะชะลอตัวจับเวลาตอนสลับไปแท็บอื่น พอกลับมาให้อัปเดตทันที
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && isRunning()) tick();
     });
 
     $("subject").value = load("st-subject", "");
