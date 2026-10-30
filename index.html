@@ -326,6 +326,16 @@
     .mine { margin-top: 14px; display: grid; gap: 8px; }
     .mine .btn { padding: 10px; border-radius: 12px; font-size: 14px; }
     .mine .small { justify-self: start; padding: 6px 12px; font-size: 13px; }
+    .yt-form { display: flex; gap: 8px; }
+    .yt-form input {
+      flex: 1; min-width: 0; font-family: inherit; font-size: 14px; padding: 10px 12px;
+      border-radius: 12px; border: 1px solid var(--line); background: var(--soft); color: var(--text);
+    }
+    .yt-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .yt-form .btn { padding: 10px 18px; border-radius: 12px; font-size: 14px; }
+    .yt-frame { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; }
+    .yt-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
     .now { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .quote { font-size: 14px; color: var(--muted); font-style: italic; margin: 0; line-height: 1.6; }
@@ -487,17 +497,20 @@
         <div class="sound-row" id="soundRow">
           <button class="chip active" data-sound="off">ปิด</button>
           <button class="chip" data-sound="lofi">🎹 เพลงบรรเลงชิลๆ</button>
-          <button class="chip" data-sound="mine">🎵 เพลงของฉัน</button>
+          <button class="chip" data-sound="youtube">▶️ YouTube</button>
           <button class="chip" data-sound="rain">🌧️ ฝนตก</button>
           <button class="chip" data-sound="brown">🌊 คลื่นเบาๆ</button>
           <button class="chip" data-sound="white">📻 ไวท์นอยส์</button>
         </div>
 
-        <div class="mine" id="mineBox" hidden>
-          <button class="btn btn-ghost" id="pickMusic">📂 เลือกไฟล์เพลงจากเครื่อง</button>
-          <input type="file" id="musicFile" accept="audio/*" multiple hidden>
-          <div class="now" id="nowPlaying">ยังไม่ได้เลือกเพลง (เลือกได้หลายเพลง)</div>
-          <button class="btn btn-ghost small" id="nextTrack" hidden>⏭ เพลงถัดไป</button>
+        <div class="mine" id="ytBox" hidden>
+          <form class="yt-form" id="ytForm">
+            <input type="url" id="ytUrl" placeholder="วางลิงก์ YouTube (เพลงเดียวหรือเพลย์ลิสต์)" autocomplete="off">
+            <button type="submit" class="btn btn-solid">ใช้</button>
+          </form>
+          <div class="now" id="ytStatus">ยังไม่ได้ใส่ลิงก์ ก๊อปลิงก์จากแอป YouTube มาวางได้เลย</div>
+          <div class="yt-frame" id="ytFrame" hidden><div id="ytPlayer"></div></div>
+          <button type="button" class="btn btn-ghost small" id="ytNext" hidden>⏭ เพลงถัดไป</button>
         </div>
 
         <div class="volume">
@@ -916,14 +929,14 @@
       stopSound();
       if (currentSound === "off" || !audioCtx) return;
       if (currentSound === "lofi") startLofi();
-      else if (currentSound === "mine") playMine();
+      else if (currentSound === "youtube") playYouTube();
       else playNoise(currentSound);
     }
 
     function stopSound() {
       stopNoise();
       stopLofi();
-      player.pause();
+      pauseYouTube();
     }
 
     // ---------- เพลงบรรเลงชิลๆ (แต่งสดด้วยโค้ด ไม่ต้องโหลดไฟล์ ไม่ติดลิขสิทธิ์) ----------
@@ -1032,53 +1045,103 @@
       }
     }
 
-    // ---------- เพลงของฉัน (ไฟล์จากเครื่อง) ----------
-    const player = new Audio();
-    let playerNode = null;
-    let playlist = [];
-    let trackIdx = 0;
+    // ---------- YouTube ----------
+    let yt = null;            // ตัวเล่น YouTube
+    let ytReady = false;
+    let ytLink = load("st-yt", null);   // { video, list } จำลิงก์ไว้ เปิดเว็บใหม่ก็ยังอยู่
+    let ytApiLoading = null;
 
-    function playMine() {
-      if (!playlist.length) {
-        toast("กด \"เลือกไฟล์เพลงจากเครื่อง\" ก่อนนะ 🎵");
-        return;
+    // รองรับลิงก์แบบ youtube.com/watch?v=, youtu.be/, /shorts/, /embed/, music.youtube.com และเพลย์ลิสต์
+    function parseYouTube(text) {
+      let url;
+      try { url = new URL(text.trim()); } catch { return null; }
+      if (!/(^|\.)youtube\.com$|(^|\.)youtu\.be$|(^|\.)youtube-nocookie\.com$/.test(url.hostname)) return null;
+      const okId = (s) => (s && /^[\w-]{11}$/.test(s) ? s : null);
+      let video = null;
+      if (url.hostname.endsWith("youtu.be")) video = okId(url.pathname.slice(1));
+      else if (url.searchParams.get("v")) video = okId(url.searchParams.get("v"));
+      else {
+        const m = url.pathname.match(/^\/(shorts|embed|live)\/([\w-]{11})/);
+        if (m) video = m[2];
       }
-      // ส่งเสียงผ่าน master เพื่อให้แถบปรับเสียงใช้ได้ทุกเครื่อง (iPhone ไม่ยอมให้ตั้ง audio.volume)
-      if (!playerNode) {
-        playerNode = audioCtx.createMediaElementSource(player);
-        playerNode.connect(master);
-      }
-      player.play().catch(() => toast("เล่นไฟล์นี้ไม่ได้ ลองเลือกไฟล์อื่นดูนะ"));
+      const listRaw = url.searchParams.get("list");
+      const list = listRaw && /^[\w-]+$/.test(listRaw) ? listRaw : null;
+      return video || list ? { video, list } : null;
     }
 
-    function loadTrack(i) {
-      trackIdx = (i + playlist.length) % playlist.length;
-      player.src = playlist[trackIdx].url;
-      $("nowPlaying").textContent = `▶ ${playlist[trackIdx].name} (${trackIdx + 1}/${playlist.length})`;
+    function loadYouTubeApi() {
+      if (window.YT && window.YT.Player) return Promise.resolve();
+      if (!ytApiLoading) {
+        ytApiLoading = new Promise((resolve, reject) => {
+          window.onYouTubeIframeAPIReady = resolve;
+          const s = document.createElement("script");
+          s.src = "https://www.youtube.com/iframe_api";
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+      return ytApiLoading;
     }
 
-    player.onended = () => {
-      loadTrack(trackIdx + 1);
-      if (isRunning() && currentSound === "mine") playMine();
+    async function setupYouTube(link) {
+      $("ytFrame").hidden = false;
+      $("ytStatus").textContent = "กำลังโหลด YouTube...";
+      try { await loadYouTubeApi(); }
+      catch { $("ytStatus").textContent = "โหลด YouTube ไม่ได้ ลองเช็กอินเทอร์เน็ตดูนะ"; return; }
+
+      if (yt) { yt.destroy(); yt = null; }
+      ytReady = false;
+      $("ytFrame").innerHTML = '<div id="ytPlayer"></div>';
+      const vars = { playsinline: 1, rel: 0, modestbranding: 1 };
+      if (link.list) { vars.listType = "playlist"; vars.list = link.list; }
+      yt = new YT.Player("ytPlayer", {
+        videoId: link.video || undefined,
+        playerVars: vars,
+        events: {
+          onReady: () => {
+            ytReady = true;
+            yt.setVolume(volume);
+            if (link.list) yt.setLoop(true);
+            $("ytNext").hidden = !link.list;
+            updateYtStatus();
+            if (isRunning() && currentSound === "youtube") yt.playVideo();
+          },
+          onStateChange: (e) => {
+            // เพลงเดียวจบแล้วให้วนเล่นใหม่ ระหว่างที่ยังจับเวลาอยู่
+            if (e.data === YT.PlayerState.ENDED && !link.list && isRunning()) { yt.seekTo(0); yt.playVideo(); }
+            if (e.data === YT.PlayerState.PLAYING) updateYtStatus();
+            // ถ้าผู้ใช้กดเล่นในกรอบวิดีโอเองตอนไม่ได้จับเวลา ก็ปล่อยให้เล่นได้ตามปกติ
+          },
+          onError: () => { $("ytStatus").textContent = "วิดีโอนี้เปิดนอก YouTube ไม่ได้ (เจ้าของปิดไว้) ลองลิงก์อื่นนะ"; }
+        }
+      });
+    }
+
+    function updateYtStatus() {
+      const title = ytReady && yt.getVideoData ? yt.getVideoData().title : "";
+      $("ytStatus").textContent = title ? "🎵 " + title : "พร้อมเล่น จะเริ่มตอนกดเริ่มจับเวลา";
+    }
+
+    function playYouTube() {
+      if (!ytLink) { toast("วางลิงก์ YouTube ก่อนนะ ▶️"); return; }
+      if (!yt) { setupYouTube(ytLink); return; }   // พร้อมเมื่อไหร่จะเล่นเองใน onReady
+      if (ytReady) { yt.setVolume(volume); yt.playVideo(); }
+    }
+
+    function pauseYouTube() {
+      if (yt && ytReady && yt.pauseVideo) yt.pauseVideo();
+    }
+
+    $("ytForm").onsubmit = (e) => {
+      e.preventDefault();
+      const link = parseYouTube($("ytUrl").value);
+      if (!link) { toast("ลิงก์นี้ไม่ใช่ลิงก์ YouTube ลองก๊อปมาใหม่นะ"); return; }
+      ytLink = link;
+      save("st-yt", link);
+      setupYouTube(link);
     };
 
-    $("pickMusic").onclick = () => $("musicFile").click();
-    $("musicFile").onchange = (e) => {
-      const files = [...e.target.files];
-      e.target.value = "";
-      if (!files.length) return;
-      playlist.forEach(p => URL.revokeObjectURL(p.url));
-      playlist = files.map(f => ({ name: f.name.replace(/\.[^.]+$/, ""), url: URL.createObjectURL(f) }));
-      loadTrack(0);
-      $("nextTrack").hidden = playlist.length < 2;
-      unlockAudio();
-      if (isRunning()) playMine();
-      else toast("เลือกเพลงแล้ว 🎵 จะเล่นตอนกดเริ่มจับเวลา");
-    };
-    $("nextTrack").onclick = () => {
-      loadTrack(trackIdx + 1);
-      if (isRunning() && currentSound === "mine") playMine();
-    };
+    $("ytNext").onclick = () => { if (ytReady) yt.nextVideo(); };
 
     // ---------- ความดัง ----------
     function setVolume(v) {
@@ -1086,6 +1149,7 @@
       $("volume").value = v;
       $("volumeText").textContent = v + "%";
       if (master) master.gain.setTargetAtTime(volToGain(v), audioCtx.currentTime, 0.05);
+      if (yt && ytReady) yt.setVolume(v);   // YouTube ปรับเสียงแยกเอง (เสียงไม่ได้ผ่าน master)
       save("st-volume", v);
     }
     $("volume").addEventListener("input", (e) => setVolume(Number(e.target.value)));
@@ -1296,7 +1360,7 @@
         selectSound(chip.dataset.sound);
         unlockAudio();
         if (isRunning()) startSound();
-        else if (currentSound !== "off" && !(currentSound === "mine" && !playlist.length)) toast("เสียงจะเล่นตอนกดเริ่มจับเวลา 🎧");
+        else if (currentSound !== "off" && !(currentSound === "youtube" && !ytLink)) toast("เสียงจะเล่นตอนกดเริ่มจับเวลา 🎧");
         save("st-sound", currentSound);
       };
     });
@@ -1324,7 +1388,14 @@
       if (!document.querySelector(`#soundRow [data-sound="${name}"]`)) name = "off";
       currentSound = name;
       document.querySelectorAll("#soundRow .chip").forEach(c => c.classList.toggle("active", c.dataset.sound === name));
-      $("mineBox").hidden = name !== "mine";
+      $("ytBox").hidden = name !== "youtube";
+      // เตรียมตัวเล่นไว้ล่วงหน้า (ไม่เล่นจนกว่าจะกดเริ่ม) จะได้เห็นว่าเพลงอะไร
+      if (name === "youtube" && ytLink && !yt) setupYouTube(ytLink);
+    }
+    if (ytLink) {
+      $("ytUrl").value = ytLink.video
+        ? "https://youtu.be/" + ytLink.video + (ytLink.list ? "?list=" + ytLink.list : "")
+        : "https://www.youtube.com/playlist?list=" + ytLink.list;
     }
     selectSound(load("st-sound", "off"));
     setVolume(volume);
