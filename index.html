@@ -319,6 +319,15 @@
     }
     .chip.active { background: var(--accent); border-color: var(--accent); color: white; }
 
+    .volume { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+    .volume input { flex: 1; accent-color: var(--accent); height: 24px; }
+    .volume b { width: 44px; text-align: right; font-size: 14px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .mine { margin-top: 14px; display: grid; gap: 8px; }
+    .mine .btn { padding: 10px; border-radius: 12px; font-size: 14px; }
+    .mine .small { justify-self: start; padding: 6px 12px; font-size: 13px; }
+    .now { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     .quote { font-size: 14px; color: var(--muted); font-style: italic; margin: 0; line-height: 1.6; }
 
     /* ---------- หน้าต่างตั้งค่า ---------- */
@@ -477,9 +486,25 @@
         <h2>🎧 เสียงพื้นหลัง</h2>
         <div class="sound-row" id="soundRow">
           <button class="chip active" data-sound="off">ปิด</button>
+          <button class="chip" data-sound="lofi">🎹 เพลงบรรเลงชิลๆ</button>
+          <button class="chip" data-sound="mine">🎵 เพลงของฉัน</button>
           <button class="chip" data-sound="rain">🌧️ ฝนตก</button>
           <button class="chip" data-sound="brown">🌊 คลื่นเบาๆ</button>
           <button class="chip" data-sound="white">📻 ไวท์นอยส์</button>
+        </div>
+
+        <div class="mine" id="mineBox" hidden>
+          <button class="btn btn-ghost" id="pickMusic">📂 เลือกไฟล์เพลงจากเครื่อง</button>
+          <input type="file" id="musicFile" accept="audio/*" multiple hidden>
+          <div class="now" id="nowPlaying">ยังไม่ได้เลือกเพลง (เลือกได้หลายเพลง)</div>
+          <button class="btn btn-ghost small" id="nextTrack" hidden>⏭ เพลงถัดไป</button>
+        </div>
+
+        <div class="volume">
+          <span aria-hidden="true">🔈</span>
+          <input type="range" id="volume" min="0" max="100" step="1" aria-label="ความดังเสียง">
+          <span aria-hidden="true">🔊</span>
+          <b id="volumeText">60%</b>
         </div>
       </section>
 
@@ -625,7 +650,7 @@
       unlockAudio();
       endAt = Date.now() + remaining * 1000;
       ticker = setInterval(tick, 250);
-      if (currentSound !== "off") playNoise(currentSound);
+      startSound();
       render();
     }
 
@@ -633,7 +658,7 @@
       clearInterval(ticker);
       ticker = null;
       endAt = null;
-      stopNoise();
+      stopSound();
       render();
     }
 
@@ -869,15 +894,201 @@
 
     // ---------- เสียง ----------
     let audioCtx = null;
-    let noiseNode = null;
+    let master = null;        // ปุ่มปรับความดังรวมของเสียงพื้นหลังทั้งหมด
+    let noiseNodes = [];
     let currentSound = "off";
+    let volume = Math.min(100, Math.max(0, Number(load("st-volume", 60)) || 0));
+
+    // หูคนรับรู้ความดังแบบไม่เป็นเส้นตรง ยกกำลังสองแล้วเลื่อนแถบจะรู้สึกเปลี่ยนสม่ำเสมอกว่า
+    const volToGain = (v) => (v / 100) ** 2;
 
     function unlockAudio() {
       if (!audioCtx) {
         try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
+        master = audioCtx.createGain();
+        master.gain.value = volToGain(volume);
+        master.connect(audioCtx.destination);
       }
       if (audioCtx.state === "suspended") audioCtx.resume();
     }
+
+    function startSound() {
+      stopSound();
+      if (currentSound === "off" || !audioCtx) return;
+      if (currentSound === "lofi") startLofi();
+      else if (currentSound === "mine") playMine();
+      else playNoise(currentSound);
+    }
+
+    function stopSound() {
+      stopNoise();
+      stopLofi();
+      player.pause();
+    }
+
+    // ---------- เพลงบรรเลงชิลๆ (แต่งสดด้วยโค้ด ไม่ต้องโหลดไฟล์ ไม่ติดลิขสิทธิ์) ----------
+    const BEAT = 60 / 72;     // จังหวะ 72 BPM
+    // คอร์ด Fmaj7 → Em7 → Dm7 → Cmaj7 (เลขโน้ตแบบ MIDI)
+    const CHORDS = [[53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60], [48, 52, 55, 59]];
+    const MELODY = [72, 74, 76, 79, 81, 84];   // บันไดเสียงเพนทาโทนิก ฟังสบาย ไม่ขัดกับคอร์ด
+    let lofi = null;
+    let hatBuffer = null;
+
+    const midi = (n) => 440 * 2 ** ((n - 69) / 12);
+
+    function startLofi() {
+      const bus = audioCtx.createGain();
+      bus.gain.value = 1.4;
+      const warm = audioCtx.createBiquadFilter();   // ตัดเสียงแหลมออก ให้ฟังนุ่มแบบโลไฟ
+      warm.type = "lowpass";
+      warm.frequency.value = 2200;
+      bus.connect(warm).connect(master);
+      if (!hatBuffer) {
+        hatBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.2, audioCtx.sampleRate);
+        const d = hatBuffer.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      lofi = { bus, beat: 0, next: audioCtx.currentTime + 0.1 };
+      lofi.timer = setInterval(scheduleLofi, 200);
+      scheduleLofi();
+    }
+
+    function stopLofi() {
+      if (!lofi) return;
+      clearInterval(lofi.timer);
+      const bus = lofi.bus;
+      bus.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+      setTimeout(() => bus.disconnect(), 600);
+      lofi = null;
+    }
+
+    // จองโน้ตล่วงหน้า ~1.5 วินาที เพลงจะไม่สะดุดแม้เบราว์เซอร์ชะลอโค้ดตอนสลับแท็บ
+    function scheduleLofi() {
+      while (lofi && lofi.next < audioCtx.currentTime + 1.5) {
+        playBeat(lofi.beat, lofi.next);
+        lofi.beat++;
+        lofi.next += BEAT;
+      }
+    }
+
+    function tone(freq, t, dur, type, vol, attack = 0.02) {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + attack);
+      g.gain.setTargetAtTime(0, t + dur * 0.6, dur * 0.25);
+      o.connect(g).connect(lofi.bus);
+      o.start(t);
+      o.stop(t + dur * 1.6);
+    }
+
+    function hit(t, filterType, freq, vol, decay) {
+      const s = audioCtx.createBufferSource();
+      s.buffer = hatBuffer;
+      const f = audioCtx.createBiquadFilter();
+      f.type = filterType;
+      f.frequency.value = freq;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+      s.connect(f).connect(g).connect(lofi.bus);
+      s.start(t);
+      s.stop(t + decay + 0.05);
+    }
+
+    function kick(t) {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.frequency.setValueAtTime(110, t);
+      o.frequency.exponentialRampToValueAtTime(45, t + 0.15);
+      g.gain.setValueAtTime(0.35, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.connect(g).connect(lofi.bus);
+      o.start(t);
+      o.stop(t + 0.4);
+    }
+
+    function playBeat(b, t) {
+      const chord = CHORDS[Math.floor(b / 4) % CHORDS.length];
+      const pos = b % 4;
+      if (pos === 0) {
+        chord.forEach(n => tone(midi(n), t, BEAT * 4, "triangle", 0.045, 0.4));
+        tone(midi(chord[0] - 12), t, BEAT * 2, "sine", 0.16);
+      }
+      if (pos === 2) tone(midi(chord[0] - 12), t, BEAT * 2, "sine", 0.13);
+
+      if (pos === 0 || pos === 2) kick(t);
+      if (pos === 1 || pos === 3) hit(t, "bandpass", 1500, 0.06, 0.18);   // สแนร์เบาๆ
+      hit(t, "highpass", 7000, 0.025, 0.05);                              // ไฮแฮท
+      hit(t + BEAT / 2 + 0.03, "highpass", 7000, 0.015, 0.04);            // ไฮแฮทแบบสวิงนิดๆ
+
+      // เมโลดี้สุ่ม เพลงจึงไม่ซ้ำเดิมทุกรอบ
+      if (Math.random() < 0.55) {
+        const note = MELODY[Math.floor(Math.random() * MELODY.length)];
+        const offset = Math.random() < 0.5 ? 0 : BEAT / 2;
+        tone(midi(note), t + offset, BEAT * 0.9, "sine", 0.05);
+      }
+    }
+
+    // ---------- เพลงของฉัน (ไฟล์จากเครื่อง) ----------
+    const player = new Audio();
+    let playerNode = null;
+    let playlist = [];
+    let trackIdx = 0;
+
+    function playMine() {
+      if (!playlist.length) {
+        toast("กด \"เลือกไฟล์เพลงจากเครื่อง\" ก่อนนะ 🎵");
+        return;
+      }
+      // ส่งเสียงผ่าน master เพื่อให้แถบปรับเสียงใช้ได้ทุกเครื่อง (iPhone ไม่ยอมให้ตั้ง audio.volume)
+      if (!playerNode) {
+        playerNode = audioCtx.createMediaElementSource(player);
+        playerNode.connect(master);
+      }
+      player.play().catch(() => toast("เล่นไฟล์นี้ไม่ได้ ลองเลือกไฟล์อื่นดูนะ"));
+    }
+
+    function loadTrack(i) {
+      trackIdx = (i + playlist.length) % playlist.length;
+      player.src = playlist[trackIdx].url;
+      $("nowPlaying").textContent = `▶ ${playlist[trackIdx].name} (${trackIdx + 1}/${playlist.length})`;
+    }
+
+    player.onended = () => {
+      loadTrack(trackIdx + 1);
+      if (isRunning() && currentSound === "mine") playMine();
+    };
+
+    $("pickMusic").onclick = () => $("musicFile").click();
+    $("musicFile").onchange = (e) => {
+      const files = [...e.target.files];
+      e.target.value = "";
+      if (!files.length) return;
+      playlist.forEach(p => URL.revokeObjectURL(p.url));
+      playlist = files.map(f => ({ name: f.name.replace(/\.[^.]+$/, ""), url: URL.createObjectURL(f) }));
+      loadTrack(0);
+      $("nextTrack").hidden = playlist.length < 2;
+      unlockAudio();
+      if (isRunning()) playMine();
+      else toast("เลือกเพลงแล้ว 🎵 จะเล่นตอนกดเริ่มจับเวลา");
+    };
+    $("nextTrack").onclick = () => {
+      loadTrack(trackIdx + 1);
+      if (isRunning() && currentSound === "mine") playMine();
+    };
+
+    // ---------- ความดัง ----------
+    function setVolume(v) {
+      volume = v;
+      $("volume").value = v;
+      $("volumeText").textContent = v + "%";
+      if (master) master.gain.setTargetAtTime(volToGain(v), audioCtx.currentTime, 0.05);
+      save("st-volume", v);
+    }
+    $("volume").addEventListener("input", (e) => setVolume(Number(e.target.value)));
 
     function chime() {
       if (!settings.chime || !audioCtx) return;
@@ -922,33 +1133,32 @@
       src.buffer = makeNoiseBuffer(type);
       src.loop = true;
       const gain = audioCtx.createGain();
-      gain.gain.value = type === "white" ? 0.15 : 0.5;
-      let out = src;
+      gain.gain.value = type === "white" ? 0.5 : 0.7;
+      src.connect(gain).connect(master);
+      src.start();
+      noiseNodes.push(src);
       if (type === "rain") {
-        // ฝน = เสียงสีขาวกรองความถี่สูงออก + ซ่าเบาๆ
+        // ฝน = เสียงทุ้มต่ำ + เสียงซ่าช่วงกลางเหมือนเม็ดฝน
         const white = audioCtx.createBufferSource();
         white.buffer = makeNoiseBuffer("white");
         white.loop = true;
-        const hp = audioCtx.createBiquadFilter();
-        hp.type = "bandpass";
-        hp.frequency.value = 1800;
-        hp.Q.value = 0.6;
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = "bandpass";
+        bp.frequency.value = 1800;
+        bp.Q.value = 0.6;
         const wg = audioCtx.createGain();
-        wg.gain.value = 0.35;
-        white.connect(hp).connect(wg).connect(audioCtx.destination);
+        wg.gain.value = 0.6;
+        white.connect(bp).connect(wg).connect(master);
         white.start();
-        src._extra = white;
+        noiseNodes.push(white);
       }
-      out.connect(gain).connect(audioCtx.destination);
-      src.start();
-      noiseNode = src;
     }
 
     function stopNoise() {
-      if (noiseNode) {
-        try { noiseNode.stop(); if (noiseNode._extra) noiseNode._extra.stop(); } catch {}
-        noiseNode = null;
+      for (const n of noiseNodes) {
+        try { n.stop(); } catch {}
       }
+      noiseNodes = [];
     }
 
     // ---------- แจ้งเตือน ----------
@@ -1083,12 +1293,10 @@
 
     document.querySelectorAll("#soundRow .chip").forEach(chip => {
       chip.onclick = () => {
-        currentSound = chip.dataset.sound;
-        document.querySelectorAll("#soundRow .chip").forEach(c => c.classList.toggle("active", c === chip));
+        selectSound(chip.dataset.sound);
         unlockAudio();
-        if (currentSound === "off") stopNoise();
-        else if (isRunning()) playNoise(currentSound);
-        else toast("เสียงจะเล่นตอนกดเริ่มจับเวลา 🎧");
+        if (isRunning()) startSound();
+        else if (currentSound !== "off" && !(currentSound === "mine" && !playlist.length)) toast("เสียงจะเล่นตอนกดเริ่มจับเวลา 🎧");
         save("st-sound", currentSound);
       };
     });
@@ -1112,8 +1320,14 @@
     $("subject").addEventListener("input", () => save("st-subject", $("subject").value));
 
     // จำเสียงที่เลือกไว้ (จะเริ่มเล่นเมื่อกดเริ่ม เพราะเบราว์เซอร์ไม่ให้เล่นเสียงเอง)
-    currentSound = load("st-sound", "off");
-    document.querySelectorAll("#soundRow .chip").forEach(c => c.classList.toggle("active", c.dataset.sound === currentSound));
+    function selectSound(name) {
+      if (!document.querySelector(`#soundRow [data-sound="${name}"]`)) name = "off";
+      currentSound = name;
+      document.querySelectorAll("#soundRow .chip").forEach(c => c.classList.toggle("active", c.dataset.sound === name));
+      $("mineBox").hidden = name !== "mine";
+    }
+    selectSound(load("st-sound", "off"));
+    setVolume(volume);
 
     $("quote").textContent = QUOTES[new Date().getDate() % QUOTES.length];
 
